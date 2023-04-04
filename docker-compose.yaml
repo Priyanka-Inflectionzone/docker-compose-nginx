@@ -1,0 +1,85 @@
+version : "3.8"
+services:
+  mysqldb:
+    image: mysql:8.0
+    container_name: myuserdbcontainer
+    command: --default-authentication-plugin=mysql_native_password
+    restart: unless-stopped
+    volumes: 
+      - db:/var/lib/mysql
+    ports:
+      - 9906:3306
+    expose:
+      - 3306
+    environment:
+      MYSQL_DATABASE: db
+      MYSQL_USER: admin
+      MYSQL_PASSWORD: password
+      MYSQL_ROOT_PASSWORD: password
+      SERVICE_NAME: mysqldb
+    networks:
+      - internalnet
+
+  nodeapp:
+    container_name: node-service-container
+    build: ./prisma-api-mysql
+    image: node-service:1.0 
+    command: bash -c 'while !</dev/tcp/mysqldb/3306; do sleep 20; done; npm run start:migrate' 
+    ports:
+      - 3456:3456
+    expose:
+      - 3456
+    environment:
+      DATABASE_URL: "mysql://admin:password@mysqldb:3306/db?schema=public" 
+    depends_on:
+      - mysqldb  
+    networks:
+      - internalnet
+
+  frontend:
+    container_name: frontend-container
+    build: ./Svelete-skeleton
+    image: frontend:1.0 
+    ports:
+      - 3000:3000
+    expose:
+      - 3000
+    environment:
+      BACKEND_API_URL: "http://nodeapp:3456" 
+    depends_on:
+      - mysqldb 
+      - nodeapp 
+    networks:
+      - internalnet
+
+  nginx:
+    depends_on:
+      - frontend
+      - nodeapp
+    restart: unless-stopped
+    build:
+      dockerfile: Dockerfile
+      context: ./nginx
+    ports:
+      - "80:80" 
+    networks:
+      - internalnet
+
+  adminer:
+    image: adminer:latest
+    restart: unless-stopped
+    ports:
+      - 8000:8080
+    depends_on:
+      - mysqldb
+    environment:
+      ADMINER_DEFAULT_SERVER: mysqldb
+    networks:
+      - internalnet
+
+volumes: 
+  db: 
+  
+networks:
+  internalnet:
+    driver: bridge 
